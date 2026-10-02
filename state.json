@@ -1,0 +1,60 @@
+{
+  "consecutive_failures": 0,
+  "jobs": {
+    "114438158@R060": {
+      "first_seen": "2026-09-29T14:07:16",
+      "missed": 0,
+      "posted": "Oct 02, 2026",
+      "stores": [
+        "Roosevelt Field (Garden City)"
+      ],
+      "team": "Apple Retail",
+      "title": "US - Specialist: Seasonal, Part-time",
+      "url": "https://jobs.apple.com/en-us/details/114438158/us-specialist-seasonal-part-time"
+    },
+    "114438158@R068": {
+      "first_seen": "2026-09-29T14:07:16",
+      "missed": 0,
+      "posted": "Oct 02, 2026",
+      "stores": [
+        "Walt Whitman (Huntington Station)"
+      ],
+      "team": "Apple Retail",
+      "title": "US - Specialist: Seasonal, Part-time",
+      "url": "https://jobs.apple.com/en-us/details/114438158/us-specialist-seasonal-part-time"
+    },
+    "114438158@R139": {
+      "first_seen": "2026-09-29T14:07:16",
+      "missed": 0,
+      "posted": "Oct 02, 2026",
+      "stores": [
+        "Smith Haven (Lake Grove)"
+      ],
+      "team": "Apple Retail",
+      "title": "US - Specialist: Seasonal, Part-time",
+      "url": "https://jobs.apple.com/en-us/details/114438158/us-specialist-seasonal-part-time"
+    },
+    "200651638": {
+      "first_seen": "2026-09-29T13:46:42",
+      "missed": 0,
+      "posted": "Apr 13, 2026",
+      "stores": [
+        "Smith Haven (Lake Grove)"
+      ],
+      "team": "Apple Retail",
+      "title": "US-Technical Specialist",
+      "url": "https://jobs.apple.com/en-us/details/200651638/us-technical-specialist"
+    },
+    "200672370": {
+      "first_seen": "2026-09-29T13:46:42",
+      "missed": 0,
+      "posted": "Jul 14, 2026",
+      "stores": [
+        "Smith Haven (Lake Grove)"
+      ],
+      "team": "Apple Retail",
+      "title": "US-Genius",
+      "url": "https://jobs.apple.com/en-us/details/200672370/us-genius"
+    }
+  }
+}

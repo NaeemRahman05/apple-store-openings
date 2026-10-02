@@ -1,0 +1,42 @@
+name: Check store openings
+
+on:
+  schedule:
+    # Every 15 minutes, offset from the top of the hour when GitHub's scheduler is busiest.
+    - cron: "7,22,37,52 * * * *"
+  workflow_dispatch:
+    inputs:
+      test_notification:
+        description: Send a test notification instead of checking
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: check-openings
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for openings
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: python3 cloud.py ${{ inputs.test_notification && '--test' || '' }}
+
+      - name: Save state
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state.json
+          if ! git diff --cached --quiet; then
+            git commit -m "Update tracked openings"
+            git pull --rebase
+            git push
+          fi
