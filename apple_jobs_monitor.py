@@ -62,6 +62,10 @@ EVENTS_LIMIT = 50  # new/closed events kept for the dashboard
 
 PHONE_ALERTS = True  # mirror openings into Reminders so they reach iPhone and Siri
 REMINDERS_LIST = "Apple Jobs"
+# iPhone alerts come from the online checker (CLOUD_REPO, via ntfy), which also runs while the
+# Mac sleeps, so new reminders are added quietly instead of ringing a second alert.
+REMINDER_ALARMS = False
+CLOUD_REPO = "NaeemRahman05/apple-store-openings"  # shown on the dashboard; None to hide
 
 BASE_URL = "https://jobs.apple.com"
 USER_AGENT = (
@@ -352,7 +356,7 @@ def sync_phone(state, closed_jobs):
     pending = []
     for job in state["jobs"].values():
         if not job.get("reminder"):
-            op = "alarm" if job.get("phone_alert_pending") else "add"
+            op = "alarm" if REMINDER_ALARMS and job.get("phone_alert_pending") else "add"
             pending.append((job, (op, reminder_name(job), reminder_notes(job))))
     closing = [("complete", j["reminder"], "") for j in closed_jobs if j.get("reminder")]
     if not pending and not closing:
@@ -396,6 +400,8 @@ def write_dashboard(state):
         "events": state.get("events", []),
         "phone": dict(state.get("phone") or {"status": "pending"}, enabled=PHONE_ALERTS),
         "log_path": str(LOG_FILE),
+        "reminders_list": REMINDERS_LIST,
+        "cloud_repo": CLOUD_REPO,
     }
     html = template.replace("__DATA__", json.dumps(data).replace("</", "<\\/"))
     APP_DIR.mkdir(parents=True, exist_ok=True)
