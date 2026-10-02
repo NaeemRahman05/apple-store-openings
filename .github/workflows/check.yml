@@ -28,6 +28,7 @@ jobs:
       - name: Check for openings
         env:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          TZ: America/New_York  # timestamps match the stores' (and the Mac's) local time
         run: python3 cloud.py ${{ inputs.test_notification && '--test' || '' }}
 
       - name: Save state
