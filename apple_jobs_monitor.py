@@ -13,10 +13,14 @@ closes. Openings are found two ways:
 Other nationwide postings (internships etc.) show up in every city's search and
 are ignored.
 
-Each opening is also added to an "Apple Jobs" list in Reminders, which syncs to
-iPhone through iCloud (new ones ring an alert there) and can be read by Siri.
-After every check, a dashboard page is rewritten with the countdown to the next
-check, check history and current openings.
+New and closed openings are pushed to iPhone through ntfy. An online copy of this
+checker (CLOUD_REPO) does the same while the Mac is off; each side skips pushes the
+other already sent. Openings are also kept in an "Apple Jobs" list in Reminders
+so Siri can read them. After every check, a dashboard page is rewritten with the
+countdown to the next check, check history and current openings.
+
+Only public jobs.apple.com postings are visible; internal-only postings on
+careers.apple.com are not.
 
 Usage:
   python3 apple_jobs_monitor.py              check once now
@@ -25,7 +29,7 @@ Usage:
   python3 apple_jobs_monitor.py --install    check every 15 minutes in the background
   python3 apple_jobs_monitor.py --uninstall  stop background checks
   python3 apple_jobs_monitor.py --test-alert show a sample alert
-  python3 apple_jobs_monitor.py --test-phone add a test reminder that alerts on iPhone
+  python3 apple_jobs_monitor.py --test-phone send a test push to iPhone
 """
 
 import argparse
@@ -62,10 +66,12 @@ EVENTS_LIMIT = 50  # new/closed events kept for the dashboard
 
 PHONE_ALERTS = True  # mirror openings into Reminders so they reach iPhone and Siri
 REMINDERS_LIST = "Apple Jobs"
-# iPhone alerts come from the online checker (CLOUD_REPO, via ntfy), which also runs while the
-# Mac sleeps, so new reminders are added quietly instead of ringing a second alert.
+# iPhone alerts are ntfy pushes, so reminders are added quietly instead of ringing a second alert.
 REMINDER_ALARMS = False
-CLOUD_REPO = "NaeemRahman05/apple-store-openings"  # shown on the dashboard; None to hide
+CLOUD_REPO = "NaeemRahman05/apple-store-openings"  # online backup checker; None to hide it on the dashboard
+
+NTFY_URL = "https://ntfy.sh/"
+NTFY_DEDUP_WINDOW = "12h"  # how far back ntfy keeps messages, and so how far back duplicates are caught
 
 BASE_URL = "https://jobs.apple.com"
 USER_AGENT = (
@@ -82,6 +88,7 @@ TEMPLATE_NAME = "dashboard_template.html"  # lives next to this script
 LAUNCH_LABEL = "local.apple-jobs-monitor"
 PLIST_PATH = Path.home() / "Library" / "LaunchAgents" / f"{LAUNCH_LABEL}.plist"
 LAUNCHER_APP = Path.home() / "Applications" / "Apple Jobs Monitor.app"
+NTFY_TOPIC_FILE = APP_DIR / "ntfy_topic.txt"  # the online checker reads NTFY_TOPIC from its environment instead
 
 
 class PageFormatError(Exception):
@@ -373,6 +380,70 @@ def sync_phone(state, closed_jobs):
     log(f"Phone alerts: {len(pending)} reminder(s) added, {len(closing)} checked off")
 
 
+# ---------------------------------------------------------------- phone (ntfy pushes)
+
+def ntfy_topic():
+    if os.environ.get("NTFY_TOPIC"):
+        return os.environ["NTFY_TOPIC"]
+    try:
+        return NTFY_TOPIC_FILE.read_text().strip() or None
+    except FileNotFoundError:
+        return None
+
+
+def push(topic, title, message, click=None, priority=3, tags=()):
+    body = {"topic": topic, "title": title, "message": message, "priority": priority, "tags": list(tags)}
+    if click:
+        body["click"] = click
+        body["actions"] = [{"action": "view", "label": "Open posting", "url": click}]
+    req = urllib.request.Request(NTFY_URL, data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                resp.read()
+            return
+        except OSError:
+            if attempt == 2:
+                raise
+            time.sleep(5 * (attempt + 1))
+
+
+def recent_pushes(topic):
+    """(title, link) of everything sent to the topic lately, so the Mac and the online checker don't double up."""
+    try:
+        lines = http_get(f"{NTFY_URL}{topic}/json?poll=1&since={NTFY_DEDUP_WINDOW}").splitlines()
+    except Exception as e:
+        log(f"Couldn't read recent pushes, so duplicates aren't filtered this time: {e!r}")
+        return set()
+    sent = set()
+    for line in lines:
+        try:
+            msg = json.loads(line)
+        except ValueError:
+            continue
+        if msg.get("event") == "message":
+            sent.add((msg.get("title"), msg.get("click")))
+    return sent
+
+
+def push_changes(topic, new_jobs, closed_jobs):
+    # One push per store opening (not merged per posting) so both checkers word them identically.
+    sent = recent_pushes(topic)
+    pushed = 0
+    for kind, jobs in (("new", new_jobs), ("closed", closed_jobs)):
+        for j in jobs:
+            stores = ", ".join(store_name(s) for s in j["stores"])
+            title = f"New opening · {stores}" if kind == "new" else f"Closed · {stores}"
+            if (title, j["url"]) in sent:
+                continue
+            if kind == "new":
+                push(topic, title, f"{j['title']}\n{j['team']}", click=j["url"], priority=4, tags=["briefcase"])
+            else:
+                push(topic, title, f"{j['title']} is no longer listed", click=j["url"], priority=2)
+            pushed += 1
+    log(f"Phone push: {pushed} sent, {len(new_jobs) + len(closed_jobs) - pushed} already sent by the other checker")
+
+
 # ---------------------------------------------------------------- dashboard
 
 def write_dashboard(state):
@@ -536,6 +607,12 @@ def check():
     if not new_jobs and not closed_jobs:
         log(f"No changes ({len(tracked)} opening(s) tracked).")
 
+    topic = ntfy_topic()
+    if topic and (new_jobs or closed_jobs):
+        try:
+            push_changes(topic, new_jobs, closed_jobs)
+        except Exception as e:  # the local alert above already went out
+            log(f"Phone push failed: {e!r}")
     if PHONE_ALERTS:
         sync_phone(state, closed_jobs)
         save_state(state)
@@ -646,19 +723,12 @@ def test_alert():
 
 
 def test_phone():
-    error = run_reminders([(
-        "alarm",
-        "Apple Jobs Monitor test",
-        "If this alerted on your iPhone, phone alerts are working. You can delete this reminder.",
-    )])
-    state = load_state()
-    if state is not None:
-        state["phone"] = {"status": "error", "detail": error} if error else {"status": "connected", "detail": None}
-        save_state(state)
-    if error:
-        print(f"Couldn't add the test reminder: {error}")
+    topic = ntfy_topic()
+    if not topic:
+        print(f"No ntfy topic set up (expected in {NTFY_TOPIC_FILE}).")
         return 1
-    print(f"Added a test reminder to the '{REMINDERS_LIST}' list. It should alert on your iPhone in about 90 seconds.")
+    push(topic, "Apple Jobs Monitor", "Test from your Mac: new openings will show up here.", tags=["white_check_mark"])
+    print("Sent a test push. It should appear in the ntfy app on your iPhone within a few seconds.")
     return 0
 
 
@@ -670,7 +740,7 @@ def main():
     group.add_argument("--install", action="store_true", help="check in the background every few minutes")
     group.add_argument("--uninstall", action="store_true", help="stop background checks")
     group.add_argument("--test-alert", action="store_true", help="show a sample new-job alert")
-    group.add_argument("--test-phone", action="store_true", help="add a test reminder that alerts on iPhone")
+    group.add_argument("--test-phone", action="store_true", help="send a test push to iPhone")
     args = parser.parse_args()
     if args.dashboard:
         return open_dashboard()

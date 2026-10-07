@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Run the store-openings check in GitHub Actions and push changes to a phone through ntfy.
+"""Run the store-openings check in GitHub Actions, as a backup for when the Mac is off.
 
-Uses the same checking logic as the Mac monitor (apple_jobs_monitor.py); only the
-notifications and where state is kept differ. State lives in state.json in this
-repo, which the workflow commits back after each run.
+Uses the same checking and ntfy push code as the Mac monitor (apple_jobs_monitor.py),
+which reads the ntfy topic from NTFY_TOPIC and skips pushes the Mac already sent.
+State lives in state.json in this repo, which the workflow commits back when it changes.
 
 Usage:
   NTFY_TOPIC=... python3 cloud.py          check once
@@ -13,51 +13,21 @@ Usage:
 import json
 import os
 import sys
-import time
-import urllib.request
 from pathlib import Path
 
 import apple_jobs_monitor as monitor
 
 HERE = Path(__file__).resolve().parent
 STATE_FILE = HERE / "state.json"
-NTFY_URL = "https://ntfy.sh/"
 MAC_ONLY_FIELDS = {"reminder", "phone_alert_pending"}
 
 
-def push(title, message, click=None, priority=3, tags=()):
-    body = {
-        "topic": os.environ["NTFY_TOPIC"],
-        "title": title,
-        "message": message,
-        "priority": priority,
-        "tags": list(tags),
-    }
-    if click:
-        body["click"] = click
-        body["actions"] = [{"action": "view", "label": "Open posting", "url": click}]
-    req = urllib.request.Request(NTFY_URL, data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
-    for attempt in range(3):
-        try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                resp.read()
-            return
-        except OSError:
-            if attempt == 2:
-                raise  # fail the run so GitHub emails about it rather than silently dropping an alert
-            time.sleep(5 * (attempt + 1))
-
-
-def push_new(new_jobs):
-    for j in monitor.merge_by_posting(new_jobs):
-        stores = ", ".join(monitor.store_name(s) for s in j["stores"])
-        push(f"New opening · {stores}", f"{j['title']}\n{j['team']}", click=j["url"], priority=4, tags=["briefcase"])
-
-
-def push_notice(title, message):
+def failure_notice(title, message):
+    # check() calls banner() for closures too; those already went out as pushes.
     if "needs attention" in title:
-        message = "Online checks keep failing. See the Actions tab of the apple-store-openings repo on GitHub."
-    push(title, message, priority=2)
+        monitor.push(os.environ["NTFY_TOPIC"], title,
+                     "Online checks keep failing. See the Actions tab of the apple-store-openings repo on GitHub.",
+                     priority=2)
 
 
 def save_state(state):
@@ -73,7 +43,8 @@ def main():
     if not os.environ.get("NTFY_TOPIC"):
         sys.exit("NTFY_TOPIC is not set")
     if "--test" in sys.argv:
-        push("Apple Jobs Monitor", "The online checker is connected. New openings will show up here.", tags=["white_check_mark"])
+        monitor.push(os.environ["NTFY_TOPIC"], "Apple Jobs Monitor",
+                     "The online checker is connected. New openings will show up here.", tags=["white_check_mark"])
         print("Sent a test notification.")
         return 0
 
@@ -81,8 +52,8 @@ def main():
     monitor.LOG_FILE = HERE / "monitor.log"  # not written; GitHub keeps each run's output
     monitor.PHONE_ALERTS = False
     monitor.save_state = save_state
-    monitor.alert_new_jobs = push_new
-    monitor.banner = push_notice
+    monitor.alert_new_jobs = lambda jobs: None  # the Mac's pop-up; new openings are pushed by check()
+    monitor.banner = failure_notice
     monitor.refresh_dashboard = lambda state: None
     monitor.check()
     # A failed check is recorded in state.json and pushes a warning after repeated failures;
