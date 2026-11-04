@@ -1,17 +1,6 @@
 {
   "consecutive_failures": 0,
   "jobs": {
-    "114438158@R139": {
-      "first_seen": "2026-09-29T14:07:16",
-      "missed": 1,
-      "posted": "Nov 04, 2026",
-      "stores": [
-        "Smith Haven (Lake Grove)"
-      ],
-      "team": "Apple Retail",
-      "title": "US - Specialist: Seasonal, Part-time",
-      "url": "https://jobs.apple.com/en-us/details/114438158/us-specialist-seasonal-part-time"
-    },
     "200651638": {
       "first_seen": "2026-09-29T13:46:42",
       "missed": 0,
